@@ -1,0 +1,241 @@
+import contextlib
+with contextlib.redirect_stdout(None):
+    import pygame
+import math
+from scipy.spatial.distance import *
+
+# AI VS AI module
+class game:
+    def __init__(self):
+        # const value
+        self.WHITE         = (255,255,255)
+        self.w             = 1024
+        self.h             = 512
+        self.cooltime      = 30
+        self.accel         = 0.8
+        self.deccel        = 6
+        self.rotation_rate = 0.1
+        self.speed         = 8
+        self.radius        = 30 # pxel
+        self.rot_rate      = 0.1
+
+        self.reset()
+
+    def pygame_init(self):
+        # config
+        pygame.init()
+        pygame.display.set_caption('PVP')
+
+        # image config
+        self.pad           = pygame.display.set_mode((self.w, self.h))
+        self.aircraft0     = pygame.image.load('images/airplane0.png')
+        self.aircraft1     = pygame.image.load('images/airplane1.png')
+        self.gunshot       = pygame.image.load('images/gun.png')
+        self.bulletshape0  = pygame.image.load('images/bullet0.png')
+        self.bulletshape1  = pygame.image.load('images/bullet1.png')
+        self.clock         = pygame.time.Clock() 
+
+    def reset(self):
+        self.pygame_init()
+        
+        # player status values
+        self.FRAME_COUNTER = 0 # frame counter
+        self.rotation      = [ -self.rotation_rate, self.rotation_rate]
+
+        self.PLAYER0       = [ self.h / 2, self.w * 0.25 ]
+        self.PLAYER1       = [ self.h / 2, self.w * 0.75 ]
+        self.GUN0          = [ None, None ]
+        self.GUN1          = [ None, None ]
+        self.GUN_ROT0      = 0
+        self.GUN_ROT1      = math.pi
+
+        self.ROTATE0       = [ False, False ]
+        self.MOVE0         = [ False, False, False, False ]
+        self.ROTATE1       = [ False, False ]
+        self.MOVE1         = [ False, False, False, False ]
+        self.DISPL0        = [ 0, 0 ]
+        self.DISPL1        = [ 0, 0 ]
+        
+        self.BULLETS0      = [  ]
+        self.BULLETS1      = [  ]
+        self.RECENT_SHOT0  = 0
+        self.RECENT_SHOT1  = 0
+        
+        self.displacement  = [ -self.accel, self.accel ]
+        self.done          = False
+        self.winner        = [None]
+        self.sm0           = [None]
+        self.sr0           = [None]
+        self.sm1           = [None]
+        self.sr1           = [None]
+
+        self.step(0,0,0,0)
+
+        return self.done, self.winner, self.sm0, self.sm1, self.sr0, self.sr1
+
+    def update_status_rotate(self):
+        #status_rotate
+        dist = cdist([self.PLAYER0],[self.PLAYER1])
+        dy, dx = self.PLAYER0[0]-self.PLAYER1[0] , self.PLAYER0[1]-self.PLAYER1[1]
+        theta0, theta1 = math.atan2(-dx,-dy), math.atan2( dx, dy)
+        
+        self.sr0 = [dist, theta0]
+        self.sr1 = [dist, theta1]
+        
+        return self.sr0, self.sr1
+    
+    def update_status_move(self):
+        #status_rotate
+        xc0, yc0 = self.w/2 - self.PLAYER0[1], self.w/2 - self.PLAYER0[0]
+        xc1, yc1 = self.w/2 - self.PLAYER1[1], self.w/2 - self.PLAYER1[0]
+        xm0, ym0, xm1, ym1 = None, None, None, None
+        gamma0, gamma1 = None, None
+
+        mindist = 100000000
+        for bullet in self.BULLETS0:
+            distmp = cdist([[ bullet[0], bullet[1] ]],[self.PLAYER1])
+            if mindist > distmp:
+                mindist = distmp
+                ym1 = bullet[0]-self.PLAYER1[0]
+                xm1 = bullet[1]-self.PLAYER1[1]
+                gamma1 = math.atan2(bullet[3],bullet[2])
+
+        mindist = 100000000
+        for bullet in self.BULLETS1:
+            distmp = cdist([[ bullet[0], bullet[1] ]],[self.PLAYER0])
+            if mindist > distmp:
+                mindist = distmp
+                ym0 = bullet[0]-self.PLAYER0[0]
+                xm0 = bullet[1]-self.PLAYER0[1]
+                gamma0 = math.atan2(bullet[3],bullet[2])
+        
+        self.sm0 = [xc0,yc0,xm0,ym0,gamma0]
+        self.sm1 = [xc1,yc1,xm1,ym1,gamma1]
+
+        return self.sm0, self.sm1
+
+    def step(self, ar0, am0, ar1, am1):
+        if not self.done:
+            # action process
+            for i in range(2):
+                self.MOVE0[ i ] =  True if am0 %3 == i else False
+                self.MOVE0[2+i] =  True if am0//3 == i else False
+                self.MOVE1[ i ] =  True if am1 %3 == i else False
+                self.MOVE1[2+i] =  True if am1//3 == i else False
+                
+                self.ROTATE0[i]  = True if i == ar0 else False
+                self.ROTATE1[i]  = True if i == ar1 else False
+            
+            # player movement process
+            for i in range(4):
+                self.DISPL0[i//2] += self.displacement[i%2] if self.MOVE0[i] == True else 0
+                self.DISPL1[i//2] += self.displacement[i%2] if self.MOVE1[i] == True else 0
+            
+            for i in range(2):
+                self.PLAYER0[i] += self.DISPL0[i]
+                self.PLAYER0[i]  = max(0, min(self.PLAYER0[i], self.h if i%2==0 else self.w))
+                self.DISPL0[i] /= ( self.deccel + 1 ) / self.deccel
+                
+                self.PLAYER1[i] += self.DISPL1[i]
+                self.PLAYER1[i]  = max(0, min(self.PLAYER1[i], self.h if i%2==0 else self.w))
+                self.DISPL1[i] /= ( self.deccel + 1 ) / self.deccel
+            
+            # gun movement process
+            for i in range(2):
+                self.GUN_ROT0 += self.rotation[i] if self.ROTATE0[i] == True else 0
+                self.GUN_ROT1 += self.rotation[i] if self.ROTATE1[i] == True else 0
+            
+            self.GUN0 = [ self.PLAYER0[0]+math.sin(self.GUN_ROT0)*self.radius, self.PLAYER0[1]+math.cos(self.GUN_ROT0)*self.radius ]
+            self.GUN1 = [ self.PLAYER1[0]+math.sin(self.GUN_ROT1)*self.radius, self.PLAYER1[1]+math.cos(self.GUN_ROT1)*self.radius ]
+            
+            # add bullet
+            if self.FRAME_COUNTER - self.RECENT_SHOT0 > self.cooltime:
+                self.RECENT_SHOT0 = self.FRAME_COUNTER
+                mx, my = self.GUN0[1], self.GUN0[0]
+                sx, sy = self.PLAYER0[1], self.PLAYER0[0]
+                dx, dy = mx - sx, my - sy
+                hypo = math.sqrt(dx*dx+dy*dy)
+                px, py = self.speed * dx/hypo, self.speed * dy/hypo
+
+                self.BULLETS0.append([my, mx, py, px])
+            
+            if self.FRAME_COUNTER - self.RECENT_SHOT1 > self.cooltime:
+                self.RECENT_SHOT1 = self.FRAME_COUNTER
+                mx, my = self.GUN1[1], self.GUN1[0]
+                sx, sy = self.PLAYER1[1], self.PLAYER1[0]
+                dx, dy = mx - sx, my - sy
+                hypo = math.sqrt(dx*dx+dy*dy)
+                px, py = self.speed * dx/hypo, self.speed * dy/hypo
+
+                self.BULLETS1.append([my, mx, py, px])
+                
+            # bullet movement process
+            i = 0
+            size = len(self.BULLETS0)
+            while i < size:
+                if (self.BULLETS0[i][0]< -0.2 * self.h or self.BULLETS0[i][0] > 1.2 * self.h or self.BULLETS0[i][1]< -0.2 * self.w or self.BULLETS0[i][1] > 1.2 * self.w):
+                    del self.BULLETS0[i]
+                    size-=1
+                elif cdist([[ self.BULLETS0[i][0], self.BULLETS0[i][1] ]],[self.PLAYER1]) < 25:
+                    self.winner  = 0
+                    self.done = True
+                    break
+                else : 
+                    self.BULLETS0[i][0] += self.BULLETS0[i][2]
+                    self.BULLETS0[i][1] += self.BULLETS0[i][3]
+                    i+=1
+            i = 0
+            size = len(self.BULLETS1)
+            while i < size:
+                if (self.BULLETS1[i][0]< -0.2 * self.h or self.BULLETS1[i][0] > 1.2 * self.h or self.BULLETS1[i][1]< -0.2 * self.w or self.BULLETS1[i][1] > 1.2 * self.w):
+                    del self.BULLETS1[i]
+                    size-=1
+                elif cdist([[ self.BULLETS1[i][0], self.BULLETS1[i][1] ]],[self.PLAYER0]) < 25:
+                    self.winner  = 1
+                    self.done = True
+                    break
+                else : 
+                    self.BULLETS1[i][0] += self.BULLETS1[i][2]
+                    self.BULLETS1[i][1] += self.BULLETS1[i][3]
+                    i+=1
+
+            # display config
+            self.FRAME_COUNTER+=1
+            self.render()
+
+        self.update_status_rotate()
+        self.update_status_move()
+
+        return self.done, self.winner, self.sm0, self.sm1, self.sr0, self.sr1
+
+    def render(self):
+        self.clock.tick(6000000)
+
+        self.pad.fill(self.WHITE)
+        self.draw_player0(self.PLAYER0[1],self.PLAYER0[0])
+        self.draw_gun(self.GUN0[1],self.GUN0[0])
+        for bul in self.BULLETS0:
+            self.draw_bullet0(bul[1],bul[0])
+
+        self.draw_player1(self.PLAYER1[1],self.PLAYER1[0])
+        self.draw_gun(self.GUN1[1],self.GUN1[0])
+        for bul in self.BULLETS1:
+            self.draw_bullet1(bul[1],bul[0])
+
+        pygame.display.update()
+        pygame.event.get()
+        
+    def draw_player0(self,x,y):
+        self.pad.blit(self.aircraft0, (x-25,y-25))
+
+    def draw_player1(self,x,y):
+        self.pad.blit(self.aircraft1, (x-25,y-25))
+
+    def draw_gun(self,x,y):
+        self.pad.blit(self.gunshot, (x-5,y-5))
+
+    def draw_bullet0(self,x,y):
+        self.pad.blit(self.bulletshape0, (x-5,y-5))
+
+    def draw_bullet1(self,x,y):
+        self.pad.blit(self.bulletshape1, (x-5,y-5))

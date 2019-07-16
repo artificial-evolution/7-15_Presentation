@@ -1,0 +1,12 @@
+{
+<<<<<<< HEAD
+    "python.linting.pylintEnabled":false,
+    "python.pythonPath": "C:\\Users\\USER10\\Anaconda3\\envs\\PVPAI\\python.exe",
+    "python.linting.pylintArgs": [
+        "--extension-pkg-whitelist=pygame"
+    ]
+    
+=======
+    "python.pythonPath": "C:\\Users\\user3\\Anaconda3\\envs\\PVPAI\\python.exe"
+>>>>>>> f0feeda41630b6df8fa1f92ccda3ba6355ea8fc4
+}
